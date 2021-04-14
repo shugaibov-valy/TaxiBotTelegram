@@ -10,7 +10,7 @@ bot = telebot.TeleBot(token)
 @bot.message_handler(commands=["start"])
 def start(message):
     name = message.text
-    bot.send_message(message.chat.id, "Привет {first_name}, рад тебя видеть. Пожалуйста, отправьте мне свой номер для этого есть команда /phone".format(first_name=message.from_user.first_name))
+    bot.send_message(message.chat.id, "Привет {first_name}, рад тебя видеть. Пожалуйста, отправьте мне свой номер для этого есть команда /phone".format(first_name=message.from_user.first_name), reply_markup=types.ReplyKeyboardRemove())
 
 @bot.message_handler(commands=["phone"])
 def phone(message):
@@ -35,13 +35,13 @@ def reg_or_auth(message):
     for user in passengers:
         table_phone = user[1]
         if table_phone == input_phone:   # if user_phone in passengers
-            pass
+            print(1)
     mycursor.execute('SELECT * FROM taxi_drivers')      
     drivers = mycursor.fetchall()
     for user in drivers:
         table_phone = user[1]
         if table_phone == input_phone:   # if user_phone in taxi_drivers
-            pass
+            print(2)
     
     # if table is empty
     buttons_characters = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
@@ -56,18 +56,35 @@ def reg_or_auth(message):
 @bot.message_handler('text')
 def choose_character(message, user_phone):      # choose taxi_drivers or passenger
     if message.text == 'Таксист':
-        mydb = sqlite3.connect('base.db')
-        mycursor = mydb.cursor()
-        sqlFormula = "INSERT INTO taxi_drivers ('phone', 'machine_firm', 'car_numbers') VALUES (?,?,?)"
-        mycursor.execute(sqlFormula, (user_phone, ' ', ' '))
-        mydb.commit()
+        mess = bot.send_message(message.chat.id, "Введите марку машины.", reply_markup=types.ReplyKeyboardRemove())
+        bot.register_next_step_handler(mess, machine_firm, user_phone)
+        
+        
     elif message.text == 'Пассажир':
         mydb = sqlite3.connect('base.db')
         mycursor = mydb.cursor()
         sqlFormula = "INSERT INTO passengers ('phone') VALUES (?)"
         mycursor.execute(sqlFormula, [user_phone])
         mydb.commit()
+
         
-        
+@bot.message_handler('text')              # machine_firm
+def machine_firm(message, phone):
+    firm = message.text
+    mess = bot.send_message(message.chat.id, "Введите номера машины.", reply_markup=types.ReplyKeyboardRemove())
+    bot.register_next_step_handler(mess, car_numbers, phone, firm)
+
+@bot.message_handler('text')             # car_numbers
+def car_numbers(message, phone, machine_firm):          
+    car_numbers = message.text
+    mydb = sqlite3.connect('base.db')
+    mycursor = mydb.cursor()
+    sqlFormula = "INSERT INTO taxi_drivers ('phone', 'machine_firm', 'car_numbers') VALUES (?,?,?)"
+    mycursor.execute(sqlFormula, (phone, machine_firm, car_numbers))
+    mydb.commit()
+    
+    bot.send_message(message.chat.id, "Введите номера машины.", reply_markup=types.ReplyKeyboardRemove())
+    
+    
 if __name__ == '__main__':
     bot.polling(none_stop=True)
