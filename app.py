@@ -1,6 +1,7 @@
 import telebot
 from telebot import types
 import sqlite3
+from geocoder_coords import coords_to_address, addess_to_coords
 
 
 token = "1765188979:AAH8__Aetr2x1rxFeRXSP8xGVt3CTSaQ608"
@@ -10,7 +11,7 @@ bot = telebot.TeleBot(token)
 @bot.message_handler(commands=["start"])
 def start(message):
     name = message.text
-    bot.send_message(message.chat.id, "Привет {first_name}, рад тебя видеть. Пожалуйста, отправьте мне свой номер для этого есть команда /phone".format(first_name=message.from_user.first_name), reply_markup=types.ReplyKeyboardRemove())
+    bot.send_message(message.chat.id, "Привет <b>{first_name}</b>, рад тебя видеть. Пожалуйста, отправьте мне свой номер для этого есть команда /phone".format(first_name=message.from_user.first_name), parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
 
 @bot.message_handler(commands=["phone"])
 def phone(message):
@@ -61,11 +62,11 @@ def choose_character(message, user_phone):      # choose taxi_drivers or passeng
         
         
     elif message.text == 'Пассажир':
-        mydb = sqlite3.connect('base.db')
-        mycursor = mydb.cursor()
-        sqlFormula = "INSERT INTO passengers ('phone') VALUES (?)"
-        mycursor.execute(sqlFormula, [user_phone])
-        mydb.commit()
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button_loca = types.KeyboardButton(text="🌐 Определить местоположение", request_location=True)
+        keyboard.add(button_loca)
+        mess = bot.send_message(message.chat.id, "Отправьте вашу геолокацию.🌐", reply_markup=keyboard)
+        bot.register_next_step_handler(mess, geo_location, user_phone, 'Пассажир')
 
         
 @bot.message_handler('text')              # machine_firm
@@ -74,17 +75,49 @@ def machine_firm(message, phone):
     mess = bot.send_message(message.chat.id, "Введите номера машины.", reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(mess, car_numbers, phone, firm)
 
+    
 @bot.message_handler('text')             # car_numbers
 def car_numbers(message, phone, machine_firm):          
     car_numbers = message.text
-    mydb = sqlite3.connect('base.db')
-    mycursor = mydb.cursor()
-    sqlFormula = "INSERT INTO taxi_drivers ('phone', 'machine_firm', 'car_numbers') VALUES (?,?,?)"
-    mycursor.execute(sqlFormula, (phone, machine_firm, car_numbers))
-    mydb.commit()
     
-    bot.send_message(message.chat.id, "Введите номера машины.", reply_markup=types.ReplyKeyboardRemove())
-    
-    
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    button_loca = types.KeyboardButton(text="🌐 Определить местоположение", request_location=True)
+    keyboard.add(button_loca)
+    mess = bot.send_message(message.chat.id, "Отправьте вашу геолокацию.🌐", reply_markup=keyboard)
+    bot.register_next_step_handler(mess, geo_location, phone, 'Таксист', firm=machine_firm, car_numbers=car_numbers)
+
+
+@bot.message_handler('text')
+def geo_location(message, phone, job, firm=None, car_numbers=None):   # firm and car_numbers if taxi, default passenger
+        latitude = message.location.latitude
+        longitude = message.location.longitude
+        
+        address_location = coords_to_address(longitude, latitude)     # get address from coords, function file geocoder.py
+        bot.send_message(message.chat.id, address_location, reply_markup=types.ReplyKeyboardRemove())
+                         
+        mydb = sqlite3.connect('base.db')
+        mycursor = mydb.cursor()
+        if job == 'Таксист':
+            sqlFormula = "INSERT INTO taxi_drivers ('phone', 'machine_firm', 'car_numbers', 'longitude', 'latitude') VALUES (?,?,?,?,?)"
+            mycursor.execute(sqlFormula, (phone, firm, car_numbers, longitude, latitude))
+            mydb.commit()
+            
+            users = mycursor.execute('SELECT * FROM passengers')
+            list_users = []                   
+            for user in users:
+                user_address = coords_to_address(user[2], user[3])    # find address from coords
+                list_users.append(f"<b>Пассажир №{user[0]}</b>\nАдрес: {user_address}")  # add address user to list_users
+                
+            message_list = '\n'.join(list_users)              # list users for send
+            bot.send_message(message.chat.id, "Список пассажиров:", parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
+            bot.send_message(message.chat.id, message_list, parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
+         
+        elif job == 'Пассажир':
+            sqlFormula = "INSERT INTO passengers ('phone', 'longitude', 'latitude') VALUES (?,?,?)"
+            mycursor.execute(sqlFormula, (phone, longitude, latitude))
+            mydb.commit()
+            
+            
+            
 if __name__ == '__main__':
     bot.polling(none_stop=True)
