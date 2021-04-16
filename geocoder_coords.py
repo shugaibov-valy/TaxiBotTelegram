@@ -32,7 +32,7 @@ def coords_to_address(x, y):
 
 
 def addess_to_coords(address):
-    geocoder_request = f"https://geocode-maps.yandex.ru/1.x/?apikey=40d1649f-0493-4b70-98ba-98533de7710b&geocode={x},{y}&format=json"
+    geocoder_request = f"https://geocode-maps.yandex.ru/1.x/?apikey=40d1649f-0493-4b70-98ba-98533de7710b&geocode={address}&format=json"
 
     # Выполняем запрос.
     response = requests.get(geocoder_request)
@@ -48,7 +48,7 @@ def addess_to_coords(address):
         # Координаты центра топонима:
         toponym_coodrinates = toponym["Point"]["pos"]
         # Печатаем извлечённые из ответа поля:
-        print(toponym_address, "имеет координаты:", toponym_coodrinates)
+        return toponym_coodrinates
     else:
         print("Ошибка выполнения запроса:")
         print(geocoder_request)

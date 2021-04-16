@@ -4,7 +4,7 @@ import sqlite3
 from geocoder_coords import coords_to_address, addess_to_coords
 
 
-token = "1765188979:AAH8__Aetr2x1rxFeRXSP8xGVt3CTSaQ608"
+token = "1796160355:AAGcBwsAitQtxHiNnRPDkmRq_v8GmlZSu3U"
 bot = telebot.TeleBot(token)
 
 
@@ -113,10 +113,29 @@ def geo_location(message, phone, job, firm=None, car_numbers=None):   # firm and
             bot.send_message(message.chat.id, message_list, parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
          
         elif job == 'Пассажир':
-            sqlFormula = "INSERT INTO passengers ('phone', 'longitude', 'latitude') VALUES (?,?,?)"
-            mycursor.execute(sqlFormula, (phone, longitude, latitude))
-            mydb.commit()
+            mess = bot.send_message(message.chat.id, "<b>Куда едем?</b>", parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
+            bot.register_next_step_handler(mess, where_go, phone, longitude, latitude)
             
+
+@bot.message_handler('text')
+def where_go(message, phone, longitude_start, latitude_start):   # end address for passenger
+    address_go = message.text
+    longitude_end, latitude_end = addess_to_coords(address_go).split(' ')
+    
+    mess = bot.send_message(message.chat.id, "<b>Укажите желаемую цену в ₽.</b>", parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
+    bot.register_next_step_handler(mess, price_way, phone, longitude_start, latitude_start, longitude_end, latitude_end)
+
+    
+@bot.message_handler('text')
+def price_way(message, phone, longitude_start, latitude_start, longitude_end, latitude_end):   # end address for passenger
+    price_way = int(message.text)
+    
+    mydb = sqlite3.connect('base.db')
+    mycursor = mydb.cursor()
+    sqlFormula = "INSERT INTO passengers ('phone', 'longitude_start', 'latitude_start', 'longitude_end', 'latitude_end', 'price') VALUES (?,?,?,?,?,?)"
+    mycursor.execute(sqlFormula, (phone, longitude_start, latitude_start, longitude_end, latitude_end, price_way))
+    mydb.commit()
+    
             
             
 if __name__ == '__main__':
