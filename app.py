@@ -2,9 +2,9 @@ import telebot
 from telebot import types
 import sqlite3
 from geocoder_coords import coords_to_address, addess_to_coords
+import math
 
-
-token = "1796160355:AAGcBwsAitQtxHiNnRPDkmRq_v8GmlZSu3U"
+token = "1759139182:AAFf4tFmqKr3RsF3clU8pILDH1WTNG4yOxo"
 bot = telebot.TeleBot(token)
 
 
@@ -120,7 +120,7 @@ def geo_location(message, phone, job, firm=None, car_numbers=None):   # firm and
 @bot.message_handler('text')
 def where_go(message, phone, longitude_start, latitude_start):   # end address for passenger
     address_go = message.text
-    longitude_end, latitude_end = addess_to_coords(address_go).split(' ')
+    longitude_end, latitude_end = [float(x) for x in addess_to_coords(address_go).split(' ')]
     
     mess = bot.send_message(message.chat.id, "<b>Укажите желаемую цену в ₽.</b>", parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(mess, price_way, phone, longitude_start, latitude_start, longitude_end, latitude_end)
@@ -130,13 +130,34 @@ def where_go(message, phone, longitude_start, latitude_start):   # end address f
 def price_way(message, phone, longitude_start, latitude_start, longitude_end, latitude_end):   # end address for passenger
     price_way = int(message.text)
     
+    # length of way
+    x1, y1 = longitude_start, latitude_start
+    x2, y2 = longitude_start, latitude_end
+    
+    y = math.radians((y1 + y2) / 2)   
+    x = math.cos(y)
+    n = abs(x1 - x2) * 111000 * x
+    n2 = abs(y1 - y2) * 111000 
+    length_way = round(math.sqrt(n * n + n2 * n2))
+    #---------------
+
+    # time way
+    time_way = round(length_way / (40 * 1000) * 60)
+    print(time_way)
+    #--------
+    
+    first_checkpoint = coords_to_address(longitude_start, latitude_start)
+    second_checkpoint = coords_to_address(longitude_end, latitude_end)
+    print(first_checkpoint)
+    bot.send_message(message.chat.id, f"<i><b>Ваш заказ.</b></i>\n\n<i><b>Начальная точка:</b></i> {first_checkpoint}\n\n<i><b>Конечная точка:</b></i> {second_checkpoint}\n\n<i><b>Расстояние:</b></i> {length_way} м\n\n<i><b>Время пути:</b></i> {time_way} мин\n\n<b>Цена:</b> {price_way} ₽", parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
+    
     mydb = sqlite3.connect('base.db')
     mycursor = mydb.cursor()
-    sqlFormula = "INSERT INTO passengers ('phone', 'longitude_start', 'latitude_start', 'longitude_end', 'latitude_end', 'price') VALUES (?,?,?,?,?,?)"
-    mycursor.execute(sqlFormula, (phone, longitude_start, latitude_start, longitude_end, latitude_end, price_way))
+    sqlFormula = "INSERT INTO passengers ('phone', 'longitude_start', 'latitude_start', 'longitude_end', 'latitude_end', 'price', 'length_way', 'time_way') VALUES (?,?,?,?,?,?,?,?)"
+    mycursor.execute(sqlFormula, (phone, longitude_start, latitude_start, longitude_end, latitude_end, price_way, length_way, time_way))
     mydb.commit()
     
             
             
 if __name__ == '__main__':
-    bot.polling(none_stop=True)
+    bot.polling(none_stop=True, interval=0)
