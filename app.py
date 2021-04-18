@@ -4,7 +4,7 @@ import sqlite3
 from geocoder_coords import coords_to_address, addess_to_coords
 import math
 
-token = "1759139182:AAFf4tFmqKr3RsF3clU8pILDH1WTNG4yOxo"
+token = "1747555019:AAGFSWxCQwNzQoGxXfL3gsG7VzVVLxp06OQ"
 bot = telebot.TeleBot(token)
 
 
@@ -21,7 +21,7 @@ def phone(message):
     msg = bot.send_message(message.chat.id, "Согласны ли вы предоставить ваш номер телефона для регистрации в системе?", reply_markup=user_markup)
     bot.register_next_step_handler(msg, reg_or_auth)
 
-@bot.message_handler('text')
+@bot.message_handler(content_types=['text'])
 def reg_or_auth(message):
     # user phone
     input_phone = message.contact.phone_number    
@@ -36,14 +36,15 @@ def reg_or_auth(message):
     for user in passengers:
         table_phone = user[1]
         if table_phone == input_phone:   # if user_phone in passengers
-            print(1)
+       #     print(1)
+            pass
     mycursor.execute('SELECT * FROM taxi_drivers')      
     drivers = mycursor.fetchall()
     for user in drivers:
         table_phone = user[1]
         if table_phone == input_phone:   # if user_phone in taxi_drivers
-            print(2)
-    
+        #    print(2)
+            pass
     # if table is empty
     buttons_characters = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     button_taxi_driver = types.KeyboardButton(text="Таксист")
@@ -54,7 +55,7 @@ def reg_or_auth(message):
     bot.register_next_step_handler(mess, choose_character, input_phone)      
         
         
-@bot.message_handler('text')
+@bot.message_handler(content_types=['text'])
 def choose_character(message, user_phone):      # choose taxi_drivers or passenger
     if message.text == 'Таксист':
         mess = bot.send_message(message.chat.id, "Введите марку машины.", reply_markup=types.ReplyKeyboardRemove())
@@ -69,7 +70,7 @@ def choose_character(message, user_phone):      # choose taxi_drivers or passeng
         bot.register_next_step_handler(mess, geo_location, user_phone, 'Пассажир')
 
         
-@bot.message_handler('text')              # machine_firm
+@bot.message_handler(content_types=['text'])              # machine_firm
 def machine_firm(message, phone):
     firm = message.text
     mess = bot.send_message(message.chat.id, "Введите номера машины.", reply_markup=types.ReplyKeyboardRemove())
@@ -87,11 +88,12 @@ def car_numbers(message, phone, machine_firm):
     bot.register_next_step_handler(mess, geo_location, phone, 'Таксист', firm=machine_firm, car_numbers=car_numbers)
 
 
-@bot.message_handler('text')
+@bot.message_handler(content_types=['text'])
 def geo_location(message, phone, job, firm=None, car_numbers=None):   # firm and car_numbers if taxi, default passenger
         latitude = message.location.latitude
         longitude = message.location.longitude
-        
+        dict_length = {}
+
         address_location = coords_to_address(longitude, latitude)     # get address from coords, function file geocoder.py
         bot.send_message(message.chat.id, address_location, reply_markup=types.ReplyKeyboardRemove())
                          
@@ -104,20 +106,62 @@ def geo_location(message, phone, job, firm=None, car_numbers=None):   # firm and
             
             users = mycursor.execute('SELECT * FROM passengers')
             list_users = []                   
-            for user in users:
-                user_address = coords_to_address(user[2], user[3])    # find address from coords
-                list_users.append(f"<b>Пассажир №{user[0]}</b>\nАдрес: {user_address}")  # add address user to list_users
+            for user in users:                # calculate the distance from the taxi driver's point to the starting point of the order
+            
+                x1, y1 = latitude, longitude
+                x2, y2 = float(user[3]), float(user[2])
+
+    
+                y = math.radians((y1 + y2) / 2)   
+                x = math.cos(y)
+                n = abs(x1 - x2) * 111000 * x
+                n2 = abs(y1 - y2) * 111000 
+                length_way = round(math.sqrt(n * n + n2 * n2))
+
                 
-            message_list = '\n'.join(list_users)              # list users for send
-            bot.send_message(message.chat.id, "Список пассажиров:", parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
-            bot.send_message(message.chat.id, message_list, parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
+                dict_length[user[0]] = length_way
+                list_d = list(dict_length.items())
+                list_d.sort(key=lambda i: i[1])
+               # print(list_d)
+            mydb = sqlite3.connect('base.db')
+            mycursor = mydb.cursor()
+            
+            for i in range(2):               # send only 2 order
+                users = mycursor.execute(f'SELECT * FROM passengers')
+                for us in users:
+                    if us[0] == list_d[i][0]:
+                        user = us
+                        
+                first_checkpoint = coords_to_address(user[2], user[3])    # start address
+                second_checkpoint = coords_to_address(user[4], user[5])   # end address
+                bot.send_message(message.chat.id, f"<i><b>Заказ №{user[0]}.</b></i>\n\n<i><b>Начальная точка:</b></i> {first_checkpoint}\n\n<i><b>Конечная точка:</b></i> {second_checkpoint}\n\n<i><b>Расстояние:</b></i> {user[7]} м\n\n<i><b>Время пути:</b></i> {user[8]} мин\n\n<b>Цена:</b> {user[6]} ₽", parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
+
+                
+            mess = bot.send_message(message.chat.id, "Введите номер заказа.", parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
+            bot.register_next_step_handler(mess, choose_order)
+
          
         elif job == 'Пассажир':
             mess = bot.send_message(message.chat.id, "<b>Куда едем?</b>", parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
             bot.register_next_step_handler(mess, where_go, phone, longitude, latitude)
-            
 
-@bot.message_handler('text')
+@bot.message_handler(content_types=['text'])
+def choose_order(message):   # end address for passenger
+    num_order = message.text
+    mydb = sqlite3.connect('base.db')
+    mycursor = mydb.cursor()
+    users = mycursor.execute(f'SELECT * FROM passengers')
+    user = []
+    for us in users:              # find order in table by id
+        if us[0] == int(num_order):
+            user.append(us)
+    print(user)
+    first_checkpoint = coords_to_address(user[0][2], user[0][3])    # start address
+    second_checkpoint = coords_to_address(user[0][4], user[0][5])   # end address
+    bot.send_message(message.chat.id, f"<i><b>Номер пассажира: {user[0][1]}.</b></i>\n\n<i><b>Начальная точка:</b></i> {first_checkpoint}\n\n<i><b>Конечная точка:</b></i> {second_checkpoint}\n\n<i><b>Расстояние:</b></i> {user[0][7]} м\n\n<i><b>Время пути:</b></i> {user[0][8]} мин\n\n<b>Цена:</b> {user[0][6]} ₽", parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
+    
+    
+@bot.message_handler(content_types=['text'])
 def where_go(message, phone, longitude_start, latitude_start):   # end address for passenger
     address_go = message.text
     longitude_end, latitude_end = [float(x) for x in addess_to_coords(address_go).split(' ')]
@@ -126,13 +170,13 @@ def where_go(message, phone, longitude_start, latitude_start):   # end address f
     bot.register_next_step_handler(mess, price_way, phone, longitude_start, latitude_start, longitude_end, latitude_end)
 
     
-@bot.message_handler('text')
+@bot.message_handler(content_types=['text'])
 def price_way(message, phone, longitude_start, latitude_start, longitude_end, latitude_end):   # end address for passenger
     price_way = int(message.text)
     
     # length of way
     x1, y1 = longitude_start, latitude_start
-    x2, y2 = longitude_start, latitude_end
+    x2, y2 = longitude_end, latitude_end
     
     y = math.radians((y1 + y2) / 2)   
     x = math.cos(y)
