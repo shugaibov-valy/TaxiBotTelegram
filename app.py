@@ -1,8 +1,22 @@
+# libraries for bot
+
 import telebot
 from telebot import types
 import sqlite3
-from geocoder_coords import coords_to_address, addess_to_coords
 import math
+import sys
+from io import BytesIO
+import requests
+from PIL import Image
+
+
+# python files functions
+
+from geocoder_coords import coords_to_address, addess_to_coords
+from static_map_passengers import create_static_map_order     # get static map geopos for choose order
+
+
+# TOKEN for bot
 
 token = "1747555019:AAGFSWxCQwNzQoGxXfL3gsG7VzVVLxp06OQ"
 bot = telebot.TeleBot(token)
@@ -77,19 +91,39 @@ def machine_firm(message, phone):
     bot.register_next_step_handler(mess, car_numbers, phone, firm)
 
     
-@bot.message_handler('text')             # car_numbers
+@bot.message_handler(content_types=['text'])             # car_numbers
 def car_numbers(message, phone, machine_firm):          
     car_numbers = message.text
     
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    button_loca = types.KeyboardButton(text="🌐 Определить местоположение", request_location=True)
-    keyboard.add(button_loca)
-    mess = bot.send_message(message.chat.id, "Отправьте вашу геолокацию.🌐", reply_markup=keyboard)
-    bot.register_next_step_handler(mess, geo_location, phone, 'Таксист', firm=machine_firm, car_numbers=car_numbers)
+    mess = bot.send_message(message.chat.id, "Отправьте фото машины.")    
+    bot.register_next_step_handler(mess, handle_docs_photo, car_numbers, phone, machine_firm)
 
 
+@bot.message_handler(content_types=['photo'])    # function for get photo car from user
+def handle_docs_photo(message, car_numbers, phone, machine_firm):
+    try:
+        chat_id = message.chat.id
+
+        file_info = bot.get_file(message.photo[0].file_id)
+        
+        downloaded_file = bot.download_file(file_info.file_path)
+
+        src = 'photo_cars/' + car_numbers + '.png';     # save png photo name - car_numbers
+        with open(src, 'wb') as new_file:
+            new_file.write(downloaded_file)
+    
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button_loca = types.KeyboardButton(text="🌐 Определить местоположение", request_location=True)
+        keyboard.add(button_loca)
+    
+        mess = bot.send_message(message.chat.id, "Отправьте вашу геолокацию.🌐", reply_markup=keyboard)
+        bot.register_next_step_handler(mess, geo_location, phone, 'Таксист', firm=machine_firm, car_numbers=car_numbers, src_photo_car=src)
+    except:
+        pass
+    
+    
 @bot.message_handler(content_types=['text'])
-def geo_location(message, phone, job, firm=None, car_numbers=None):   # firm and car_numbers if taxi, default passenger
+def geo_location(message, phone, job, firm=None, car_numbers=None, src_photo_car=None):   # firm and car_numbers if taxi, default passenger
         latitude = message.location.latitude
         longitude = message.location.longitude
         dict_length = {}
@@ -100,8 +134,8 @@ def geo_location(message, phone, job, firm=None, car_numbers=None):   # firm and
         mydb = sqlite3.connect('base.db')
         mycursor = mydb.cursor()
         if job == 'Таксист':
-            sqlFormula = "INSERT INTO taxi_drivers ('phone', 'machine_firm', 'car_numbers', 'longitude', 'latitude') VALUES (?,?,?,?,?)"
-            mycursor.execute(sqlFormula, (phone, firm, car_numbers, longitude, latitude))
+            sqlFormula = "INSERT INTO taxi_drivers ('phone', 'machine_firm', 'car_numbers', 'longitude', 'latitude', 'photo_car', 'teg_id') VALUES (?,?,?,?,?,?,?)"
+            mycursor.execute(sqlFormula, (phone, firm, car_numbers, longitude, latitude, src_photo_car, message.chat.id))
             mydb.commit()
             
             users = mycursor.execute('SELECT * FROM passengers')
@@ -122,7 +156,7 @@ def geo_location(message, phone, job, firm=None, car_numbers=None):   # firm and
                 dict_length[user[0]] = length_way
                 list_d = list(dict_length.items())
                 list_d.sort(key=lambda i: i[1])
-               # print(list_d)
+
             mydb = sqlite3.connect('base.db')
             mycursor = mydb.cursor()
             
@@ -135,7 +169,9 @@ def geo_location(message, phone, job, firm=None, car_numbers=None):   # firm and
                 first_checkpoint = coords_to_address(user[2], user[3])    # start address
                 second_checkpoint = coords_to_address(user[4], user[5])   # end address
                 bot.send_message(message.chat.id, f"<i><b>Заказ №{user[0]}.</b></i>\n\n<i><b>Начальная точка:</b></i> {first_checkpoint}\n\n<i><b>Конечная точка:</b></i> {second_checkpoint}\n\n<i><b>Расстояние:</b></i> {user[7]} м\n\n<i><b>Время пути:</b></i> {user[8]} мин\n\n<b>Цена:</b> {user[6]} ₽", parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
-
+                
+                
+            
                 
             mess = bot.send_message(message.chat.id, "Введите номер заказа.", parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
             bot.register_next_step_handler(mess, choose_order)
@@ -146,19 +182,39 @@ def geo_location(message, phone, job, firm=None, car_numbers=None):   # firm and
             bot.register_next_step_handler(mess, where_go, phone, longitude, latitude)
 
 @bot.message_handler(content_types=['text'])
-def choose_order(message):   # end address for passenger
+def choose_order(message):   # num order
     num_order = message.text
     mydb = sqlite3.connect('base.db')
     mycursor = mydb.cursor()
-    users = mycursor.execute(f'SELECT * FROM passengers')
-    user = []
+    mycursor.execute(f'SELECT * FROM passengers')
+    users = mycursor.fetchall()
+    passenger = []
     for us in users:              # find order in table by id
         if us[0] == int(num_order):
-            user.append(us)
-    print(user)
-    first_checkpoint = coords_to_address(user[0][2], user[0][3])    # start address
-    second_checkpoint = coords_to_address(user[0][4], user[0][5])   # end address
-    bot.send_message(message.chat.id, f"<i><b>Номер пассажира: {user[0][1]}.</b></i>\n\n<i><b>Начальная точка:</b></i> {first_checkpoint}\n\n<i><b>Конечная точка:</b></i> {second_checkpoint}\n\n<i><b>Расстояние:</b></i> {user[0][7]} м\n\n<i><b>Время пути:</b></i> {user[0][8]} мин\n\n<b>Цена:</b> {user[0][6]} ₽", parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
+            passenger.append(us)
+
+    first_checkpoint = coords_to_address(passenger[0][2], passenger[0][3])    # start address
+    second_checkpoint = coords_to_address(passenger[0][4], passenger[0][5])   # end address
+    bot.send_message(message.chat.id, f"<i><b>Номер пассажира: {passenger[0][1]}.</b></i>\n\n<i><b>Начальная точка:</b></i> {first_checkpoint}\n\n<i><b>Конечная точка:</b></i> {second_checkpoint}\n\n<i><b>Расстояние:</b></i> {passenger[0][7]} м\n\n<i><b>Время пути:</b></i> {passenger[0][8]} мин\n\n<b>Цена:</b> {passenger[0][6]} ₽", parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
+    
+    
+    # create map_point.png for choose order
+    create_static_map_order(f'{passenger[0][2]},{passenger[0][3]}')
+    
+    
+    # send map_point.png to taxi driver
+    bot.send_photo(message.chat.id, open('map_point.png', 'rb'));
+    
+    
+    # send photo taxi_car to passenger
+    mydb = sqlite3.connect('base.db')
+    mycursor = mydb.cursor()
+    mycursor.execute(f'SELECT * FROM taxi_drivers WHERE teg_id={message.chat.id}')
+    user_taxi = mycursor.fetchall()
+    src_photo_car = user_taxi[0][6]                    # src_photo_car                                       
+    
+    bot.send_photo(passenger[0][-1], open(src_photo_car, 'rb')); # passenger[0][-1] - teg_id user
+    
     
     
 @bot.message_handler(content_types=['text'])
@@ -187,18 +243,17 @@ def price_way(message, phone, longitude_start, latitude_start, longitude_end, la
 
     # time way
     time_way = round(length_way / (40 * 1000) * 60)
-    print(time_way)
     #--------
     
     first_checkpoint = coords_to_address(longitude_start, latitude_start)
     second_checkpoint = coords_to_address(longitude_end, latitude_end)
-    print(first_checkpoint)
+
     bot.send_message(message.chat.id, f"<i><b>Ваш заказ.</b></i>\n\n<i><b>Начальная точка:</b></i> {first_checkpoint}\n\n<i><b>Конечная точка:</b></i> {second_checkpoint}\n\n<i><b>Расстояние:</b></i> {length_way} м\n\n<i><b>Время пути:</b></i> {time_way} мин\n\n<b>Цена:</b> {price_way} ₽", parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
     
     mydb = sqlite3.connect('base.db')
     mycursor = mydb.cursor()
-    sqlFormula = "INSERT INTO passengers ('phone', 'longitude_start', 'latitude_start', 'longitude_end', 'latitude_end', 'price', 'length_way', 'time_way') VALUES (?,?,?,?,?,?,?,?)"
-    mycursor.execute(sqlFormula, (phone, longitude_start, latitude_start, longitude_end, latitude_end, price_way, length_way, time_way))
+    sqlFormula = "INSERT INTO passengers ('phone', 'longitude_start', 'latitude_start', 'longitude_end', 'latitude_end', 'price', 'length_way', 'time_way', 'teg_id') VALUES (?,?,?,?,?,?,?,?,?)"
+    mycursor.execute(sqlFormula, (phone, longitude_start, latitude_start, longitude_end, latitude_end, price_way, length_way, time_way, message.chat.id))
     mydb.commit()
     
             
