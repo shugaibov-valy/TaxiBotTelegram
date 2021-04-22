@@ -47,18 +47,40 @@ def reg_or_auth(message):
     # find phone in passengers table
     mycursor.execute('SELECT * FROM passengers')      
     passengers = mycursor.fetchall()
+    
     for user in passengers:
         table_phone = user[1]
-        if table_phone == input_phone:   # if user_phone in passengers
-       #     print(1)
-            pass
+        if table_phone == input_phone:   # if user_phone find in passengers table
+            
+            # keyboard for auth passenger
+            buttons_actions = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+            button_history_ways = types.KeyboardButton(text="Мои поездки")
+            button_add_order = types.KeyboardButton(text="Новая поездка")
+            buttons_actions.add(button_history_ways)
+            buttons_actions.add(button_add_order)
+            mess = bot.send_message(message.chat.id, "Выберите действие.", reply_markup=buttons_actions)
+            bot.register_next_step_handler(mess, choose_action_passenger, input_phone, message.chat.id)      
+        
+            return ''            # stop function
+    
+    
     mycursor.execute('SELECT * FROM taxi_drivers')      
     drivers = mycursor.fetchall()
+    
     for user in drivers:
         table_phone = user[1]
-        if table_phone == input_phone:   # if user_phone in taxi_drivers
-        #    print(2)
-            pass
+        if table_phone == input_phone:   # if user_phone find in taxi_drivers table
+            # keyboard for auth taxi driver
+            buttons_actions = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+            button_settings = types.KeyboardButton(text="Настройки")
+            button_choose_order = types.KeyboardButton(text="Выбрать поездку")
+            buttons_actions.add(button_settings)
+            buttons_actions.add(button_choose_order)
+            mess = bot.send_message(message.chat.id, "Выберите действие.", reply_markup=buttons_actions)
+            bot.register_next_step_handler(mess, choose_action_taxi_driver, input_phone, message.chat.id)      
+        
+            return ''            # stop function
+            
     # if table is empty
     buttons_characters = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     button_taxi_driver = types.KeyboardButton(text="Таксист")
@@ -67,6 +89,56 @@ def reg_or_auth(message):
     buttons_characters.add(button_passenger)
     mess = bot.send_message(message.chat.id, "Выберите кем вы являетесь?", reply_markup=buttons_characters)
     bot.register_next_step_handler(mess, choose_character, input_phone)      
+        
+
+@bot.message_handler(content_types=['text'])
+def choose_action_passenger(message, user_phone, teg_id):      # auth passenger action
+    if message.text == 'Мои поездки':
+        
+        # connect to base
+        mydb = sqlite3.connect('base.db')
+        mycursor = mydb.cursor()
+    
+        # find orders for history orders to passenger
+        mycursor.execute('SELECT * FROM orders')      
+        orders = mycursor.fetchall()
+        
+        for order in orders:
+            if order[1] == user_phone:
+
+                first_checkpoint = coords_to_address(order[2], order[3])    # start address
+                second_checkpoint = coords_to_address(order[4], order[5])   # end address
+                bot.send_message(message.chat.id, f"<i><b>Заказ №{order[0]}.</b></i>\n\n<i><b>Начальная точка:</b></i> {first_checkpoint}\n\n<i><b>Конечная точка:</b></i> {second_checkpoint}\n\n<i><b>Расстояние:</b></i> {order[7]} м\n\n<i><b>Время пути:</b></i> {order[8]} мин\n\n<b>Цена:</b> {order[6]} ₽", parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
+    
+    elif message.text == 'Новая поездка':
+        # geolocation new order
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button_loca = types.KeyboardButton(text="🌐 Определить местоположение", request_location=True)
+        keyboard.add(button_loca)
+        mess = bot.send_message(message.chat.id, "Отправьте вашу геолокацию.🌐", reply_markup=keyboard)
+        bot.register_next_step_handler(mess, geo_location, user_phone, 'Пассажир')
+        
+
+@bot.message_handler(content_types=['text'])
+def choose_action_taxi_driver(message, user_phone, teg_id):      # auth taxi driver action
+    if message.text == 'Выбрать поездку':
+
+        # connect to base
+        mydb = sqlite3.connect('base.db')
+        mycursor = mydb.cursor()
+    
+        # choose order for taxi driver
+        mycursor.execute(f'SELECT * FROM taxi_drivers WHERE phone={user_phone}')      
+        taxi_driver = mycursor.fetchall()
+    
+        
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button_loca = types.KeyboardButton(text="🌐 Определить местоположение", request_location=True)
+        keyboard.add(button_loca)
+    
+        mess = bot.send_message(message.chat.id, "Отправьте вашу геолокацию.🌐", reply_markup=keyboard)
+        bot.register_next_step_handler(mess, geo_location, user_phone, 'Таксист', firm=taxi_driver[0][2], car_numbers=taxi_driver[0][3], src_photo_car=taxi_driver[0][-2])
+
         
         
 @bot.message_handler(content_types=['text'])
@@ -77,6 +149,17 @@ def choose_character(message, user_phone):      # choose taxi_drivers or passeng
         
         
     elif message.text == 'Пассажир':
+        
+        # connect to base
+        mydb = sqlite3.connect('base.db')
+        mycursor = mydb.cursor()
+            
+        # Add new passenger in 'passengers' table
+        sqlFormula = "INSERT INTO passengers ('phone', 'teg_id') VALUES (?,?)"
+        mycursor.execute(sqlFormula, (user_phone, message.chat.id))
+        mydb.commit()
+        
+        
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
         button_loca = types.KeyboardButton(text="🌐 Определить местоположение", request_location=True)
         keyboard.add(button_loca)
@@ -138,7 +221,7 @@ def geo_location(message, phone, job, firm=None, car_numbers=None, src_photo_car
             mycursor.execute(sqlFormula, (phone, firm, car_numbers, longitude, latitude, src_photo_car, message.chat.id))
             mydb.commit()
             
-            users = mycursor.execute('SELECT * FROM passengers')
+            users = mycursor.execute('SELECT * FROM orders')
             list_users = []                   
             for user in users:                # calculate the distance from the taxi driver's point to the starting point of the order
             
@@ -161,7 +244,7 @@ def geo_location(message, phone, job, firm=None, car_numbers=None, src_photo_car
             mycursor = mydb.cursor()
             
             for i in range(2):               # send only 2 order
-                users = mycursor.execute(f'SELECT * FROM passengers')
+                users = mycursor.execute(f'SELECT * FROM orders')
                 for us in users:
                     if us[0] == list_d[i][0]:
                         user = us
@@ -186,7 +269,7 @@ def choose_order(message):   # num order
     num_order = message.text
     mydb = sqlite3.connect('base.db')
     mycursor = mydb.cursor()
-    mycursor.execute(f'SELECT * FROM passengers')
+    mycursor.execute(f'SELECT * FROM orders')
     users = mycursor.fetchall()
     passenger = []
     for us in users:              # find order in table by id
@@ -252,7 +335,7 @@ def price_way(message, phone, longitude_start, latitude_start, longitude_end, la
     
     mydb = sqlite3.connect('base.db')
     mycursor = mydb.cursor()
-    sqlFormula = "INSERT INTO passengers ('phone', 'longitude_start', 'latitude_start', 'longitude_end', 'latitude_end', 'price', 'length_way', 'time_way', 'teg_id') VALUES (?,?,?,?,?,?,?,?,?)"
+    sqlFormula = "INSERT INTO orders ('phone', 'longitude_start', 'latitude_start', 'longitude_end', 'latitude_end', 'price', 'length_way', 'time_way', 'teg_id') VALUES (?,?,?,?,?,?,?,?,?)"
     mycursor.execute(sqlFormula, (phone, longitude_start, latitude_start, longitude_end, latitude_end, price_way, length_way, time_way, message.chat.id))
     mydb.commit()
     
