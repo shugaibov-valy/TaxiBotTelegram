@@ -35,62 +35,67 @@ def phone(message):
     msg = bot.send_message(message.chat.id, "Согласны ли вы предоставить ваш номер телефона для регистрации в системе?", reply_markup=user_markup)
     bot.register_next_step_handler(msg, reg_or_auth)
 
-@bot.message_handler(content_types=['text'])
+    
 def reg_or_auth(message):
-    # user phone
-    input_phone = message.contact.phone_number    
+    try:
+        # user phone
+        input_phone = message.contact.phone_number    
 
-    # connect to base
-    mydb = sqlite3.connect('base.db')
-    mycursor = mydb.cursor()
+        # connect to base
+        mydb = sqlite3.connect('base.db')
+        mycursor = mydb.cursor()
     
-    # find phone in passengers table
-    mycursor.execute('SELECT * FROM passengers')      
-    passengers = mycursor.fetchall()
+        # find phone in passengers table
+        mycursor.execute('SELECT * FROM passengers')      
+        passengers = mycursor.fetchall()
     
-    for user in passengers:
-        table_phone = user[1]
-        if table_phone == input_phone:   # if user_phone find in passengers table
+        for user in passengers:
+            table_phone = user[1]
+            if table_phone == input_phone:   # if user_phone find in passengers table
             
-            # keyboard for auth passenger
-            buttons_actions = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            button_history_ways = types.KeyboardButton(text="Мои поездки")
-            button_add_order = types.KeyboardButton(text="Новая поездка")
-            buttons_actions.add(button_history_ways)
-            buttons_actions.add(button_add_order)
-            mess = bot.send_message(message.chat.id, "Выберите действие.", reply_markup=buttons_actions)
-            bot.register_next_step_handler(mess, choose_action_passenger, input_phone, message.chat.id)      
+                # keyboard for auth passenger
+                buttons_actions = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+                button_history_ways = types.KeyboardButton(text="Мои поездки")
+                button_add_order = types.KeyboardButton(text="Новая поездка")
+                buttons_actions.add(button_history_ways)
+                buttons_actions.add(button_add_order)
+                mess = bot.send_message(message.chat.id, "Выберите действие.", reply_markup=buttons_actions)
+                bot.register_next_step_handler(mess, choose_action_passenger, input_phone, message.chat.id)      
         
-            return ''            # stop function
+                return ''            # stop function
     
     
-    mycursor.execute('SELECT * FROM taxi_drivers')      
-    drivers = mycursor.fetchall()
+        mycursor.execute('SELECT * FROM taxi_drivers')      
+        drivers = mycursor.fetchall()
     
-    for user in drivers:
-        table_phone = user[1]
-        if table_phone == input_phone:   # if user_phone find in taxi_drivers table
-            # keyboard for auth taxi driver
-            buttons_actions = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            button_settings = types.KeyboardButton(text="Настройки")
-            button_choose_order = types.KeyboardButton(text="Выбрать поездку")
-            buttons_actions.add(button_settings)
-            buttons_actions.add(button_choose_order)
-            mess = bot.send_message(message.chat.id, "Выберите действие.", reply_markup=buttons_actions)
-            bot.register_next_step_handler(mess, choose_action_taxi_driver, input_phone, message.chat.id)      
+        for user in drivers:
+            table_phone = user[1]
+            if table_phone == input_phone:   # if user_phone find in taxi_drivers table
+                # keyboard for auth taxi driver
+                buttons_actions = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+                button_settings = types.KeyboardButton(text="Настройки")
+                button_choose_order = types.KeyboardButton(text="Выбрать поездку")
+                buttons_actions.add(button_settings)
+                buttons_actions.add(button_choose_order)
+                mess = bot.send_message(message.chat.id, "Выберите действие.", reply_markup=buttons_actions)
+                bot.register_next_step_handler(mess, choose_action_taxi_driver, input_phone, message.chat.id)      
         
-            return ''            # stop function
+                return ''            # stop function
             
-    # if table is empty
-    buttons_characters = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    button_taxi_driver = types.KeyboardButton(text="Таксист")
-    button_passenger = types.KeyboardButton(text="Пассажир")
-    buttons_characters.add(button_taxi_driver)
-    buttons_characters.add(button_passenger)
-    mess = bot.send_message(message.chat.id, "Выберите кем вы являетесь?", reply_markup=buttons_characters)
-    bot.register_next_step_handler(mess, choose_character, input_phone)      
-        
-
+        # if table is empty
+        buttons_characters = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        button_taxi_driver = types.KeyboardButton(text="Таксист")
+        button_passenger = types.KeyboardButton(text="Пассажир")
+        buttons_characters.add(button_taxi_driver)
+        buttons_characters.add(button_passenger)
+        mess = bot.send_message(message.chat.id, "Выберите кем вы являетесь?", reply_markup=buttons_characters)
+        bot.register_next_step_handler(mess, choose_character, input_phone)      
+    
+    except:
+        mess = bot.send_message(message.chat.id, "Ошибка. Отправьте номер телефона!")
+        bot.register_next_step_handler(mess, reg_or_auth)
+    
+    
 @bot.message_handler(content_types=['text'])
 def choose_action_passenger(message, user_phone, teg_id):      # auth passenger action
     if message.text == 'Мои поездки':
